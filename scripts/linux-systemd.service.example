@@ -1,0 +1,15 @@
+[Unit]
+Description=Aura Butler web dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aura-butler
+Environment=NODE_ENV=production
+Environment=BUTLER_WEB_PORT=8800
+ExecStart=/usr/bin/env bash /opt/aura-butler/scripts/linux-start.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

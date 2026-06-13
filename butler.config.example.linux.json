@@ -1,0 +1,40 @@
+{
+  "workspace": {
+    "name": "workspace",
+    "root": "/opt/workspace"
+  },
+  "aura": {
+    "mode": "auto",
+    "searchRoots": ["/opt", "/workspace", "..", "~/CLI-self-deploy-src"]
+  },
+  "execution": {
+    "maxParallelTasks": 3,
+    "taskTimeoutMinutes": 60,
+    "stuckAfterMinutes": 10,
+    "useStdinForPrompt": false,
+    "outputFormat": "stream-json",
+    "verbose": true,
+    "terminateGraceSeconds": 10,
+    "schedulerIntervalSeconds": 5,
+    "watchdogIntervalSeconds": 300,
+    "progressReportIntervalSeconds": 900
+  },
+  "retry": {
+    "maxRetries": 2,
+    "resumeOnRetry": true
+  },
+  "llm": {
+    "enabled": true,
+    "provider": "openai-compatible",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "model": "gpt-4o-mini",
+    "timeoutMs": 20000
+  },
+  "storage": {
+    "dataDir": "./data",
+    "databasePath": "./data/butler.sqlite",
+    "logsDir": "./data/logs",
+    "artifactsDir": "./data/artifacts"
+  }
+}

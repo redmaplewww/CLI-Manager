@@ -1,0 +1,26 @@
+{
+  "name": "aura-butler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "butler": "src/cli.ts"
+  },
+  "scripts": {
+    "butler": "bun run src/cli.ts",
+    "web": "bun run src/cli.ts web --port 8800",
+    "daemon:start": "bun run src/cli.ts daemon start",
+    "daemon:stop": "bun run src/cli.ts daemon stop",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.27",
+    "@types/bun": "latest",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.3"
+  }
+}

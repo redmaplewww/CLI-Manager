@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aura Butler</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <strong>Aura Butler</strong>
+        <span id="daemonBadge" class="badge">daemon 检查中</span>
+        <span id="llmBadge" class="badge">LLM 检查中</span>
+      </div>
+      <div class="actions">
+        <button id="startDaemon">启动 daemon</button>
+        <button id="stopDaemon">停止 daemon</button>
+        <button id="refresh">刷新</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel chat-panel">
+        <h2>工作对话</h2>
+        <details class="llm-settings">
+          <summary>LLM 配置</summary>
+          <label><input id="llmEnabled" type="checkbox" /> 启用 LLM</label>
+          <input id="llmBaseUrl" placeholder="baseUrl，例如 https://api.openai.com/v1" />
+          <input id="llmModel" placeholder="model，例如 gpt-4o-mini" />
+          <input id="llmApiKeyEnv" placeholder="apiKeyEnv，例如 OPENAI_API_KEY" />
+          <input id="llmApiKey" type="password" placeholder="API Key（留空则不修改）" />
+          <button id="saveLlmConfig" type="button">保存 LLM 配置</button>
+          <div id="llmConfigHint" class="muted"></div>
+        </details>
+        <div id="chatLog" class="chat-log"></div>
+        <form id="chatForm" class="chat-form">
+          <textarea id="chatInput" placeholder="在这里指派新任务、接管 session、修改配置等"></textarea>
+          <button type="submit">发送</button>
+        </form>
+      </section>
+
+      <section class="panel monitor-panel">
+        <h2>监控对话</h2>
+        <div class="monitor-actions">
+          <button id="enableAllInspection">开启总巡检</button>
+          <button id="disableAllInspection">关闭总巡检</button>
+          <button id="refreshMonitor">刷新通报</button>
+        </div>
+        <div id="monitorLog" class="monitor-log"></div>
+      </section>
+
+      <section class="panel tasks-panel">
+        <h2>任务分配</h2>
+        <form id="newGroupForm" class="new-group-form">
+          <input id="newGroupName" placeholder="新分组名" />
+          <button type="submit">添加分组</button>
+        </form>
+        <div id="tasks" class="cards"></div>
+      </section>
+
+      <section class="panel projects-panel">
+        <h2>Session 接管 / 归档</h2>
+        <h3>发现的 CLI Session</h3>
+        <button id="scanSessions">扫描 Session</button>
+        <button id="bindSessions">绑定选中</button>
+        <div id="sessionTabs" class="session-tabs"></div>
+        <div id="sessionsList" class="cards sessions-cards"></div>
+        <h3>用户归档</h3>
+        <div id="archivedTasks" class="cards archive-cards"></div>
+        <h3>自主项目</h3>
+        <div id="projects" class="cards"></div>
+      </section>
+
+      <section class="panel inspector-panel">
+        <h2>CLI 工作过程</h2>
+        <div id="selectedTitle" class="muted">选择一个任务查看详情</div>
+        <div class="task-actions">
+          <button id="scanProgress">更新进度总结</button>
+          <button id="toggleInspection">巡检：-</button>
+          <button id="archiveTask">确认完成并归档</button>
+          <button id="unarchiveTask">从归档恢复</button>
+          <button id="deleteTask" class="danger-button">删除 Task</button>
+        </div>
+        <h3>任务概述</h3>
+        <input id="displayNameInput" class="display-name-input" placeholder="给任务起一个便于管理的名字" />
+        <button id="saveDisplayName">保存概述</button>
+        <h3>管家进度通报</h3>
+        <pre id="progressReport"></pre>
+        <h3>任务结束判定规则</h3>
+        <textarea id="criteriaInput" class="criteria-input" placeholder="定义这个 task 怎样才算完成"></textarea>
+        <button id="saveCriteria">保存判定规则</button>
+        <button id="judgeDone">读取输出并判断完成</button>
+        <pre id="judgeResult"></pre>
+        <h3>子任务 / Session</h3>
+        <div id="childTasks" class="child-tasks"></div>
+        <pre id="workerInfo"></pre>
+        <h3>Session 对话</h3>
+        <div id="sessionHistory" class="session-history"></div>
+        <form id="sessionForm" class="session-form">
+          <textarea id="sessionInput" placeholder="用 --resume 接管这个 session 并发送消息；Enter 发送，Shift+Enter 换行"></textarea>
+          <button type="submit">Resume 并发送</button>
+        </form>
+        <h3>事件流</h3>
+        <pre id="events"></pre>
+        <h3>结果</h3>
+        <pre id="result"></pre>
+      </section>
+    </main>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
