@@ -56,10 +56,19 @@ export function startWebServer(
             }, 60_000),
           )
         if (url.pathname === '/api/monitor') return json(getMonitorFeed())
+        if (url.pathname === '/api/inspection/status') return json(getInspectionStatus())
+        if (url.pathname === '/api/inspection/intervals' && req.method === 'GET')
+          return json(getInspectionIntervals())
+        if (url.pathname === '/api/inspection/intervals' && req.method === 'POST') {
+          const body = (await req.json()) as { watchdogSeconds?: number; reporterSeconds?: number }
+          return json(saveInspectionIntervals(body))
+        }
         if (url.pathname === '/api/inspection/all' && req.method === 'POST') {
           const body = (await req.json()) as { enabled?: boolean }
-          for (const task of ledger.listTasks())
+          for (const task of ledger.listTasks()) {
+            if (body.enabled && task.status === 'completed') continue
             ledger.updateTask(task.id, { inspectionEnabled: Boolean(body.enabled) })
+          }
           return json({ ok: true, enabled: Boolean(body.enabled) })
         }
         if (url.pathname === '/api/sessions')
@@ -239,6 +248,92 @@ function getMonitorFeed() {
         '暂无巡检记录',
     }))
   return { items: lines }
+}
+
+function getInspectionStatus() {
+  const daemonState = readDaemonState(config)
+  const now = Date.now()
+  const tasks = ledger.listTasks()
+  const inspectable = tasks.filter(t => !t.userArchivedAt && t.inspectionEnabled && t.taskKind !== 'manager')
+  const active = inspectable.filter(t => !['completed', 'cancelled'].includes(t.status))
+
+  const watchdogAlive = daemonState?.watchdogLastBeat
+    ? now - Date.parse(daemonState.watchdogLastBeat) < (daemonState.watchdogIntervalSeconds ?? 300) * 1000 * 2
+    : false
+  const reporterAlive = daemonState?.reporterLastBeat
+    ? now - Date.parse(daemonState.reporterLastBeat) < (daemonState.reporterIntervalSeconds ?? 900) * 1000 * 2
+    : false
+  const schedulerAlive = daemonState?.schedulerLastBeat
+    ? now - Date.parse(daemonState.schedulerLastBeat) < (daemonState.schedulerIntervalSeconds ?? 2) * 1000 * 10
+    : false
+
+  return {
+    daemonAlive: Boolean(daemonState),
+    watchdog: {
+      alive: watchdogAlive,
+      lastBeat: daemonState?.watchdogLastBeat ?? null,
+      intervalSeconds: daemonState?.watchdogIntervalSeconds ?? null,
+      secondsAgo: daemonState?.watchdogLastBeat
+        ? Math.round((now - Date.parse(daemonState.watchdogLastBeat)) / 1000)
+        : null,
+    },
+    reporter: {
+      alive: reporterAlive,
+      lastBeat: daemonState?.reporterLastBeat ?? null,
+      intervalSeconds: daemonState?.reporterIntervalSeconds ?? null,
+      secondsAgo: daemonState?.reporterLastBeat
+        ? Math.round((now - Date.parse(daemonState.reporterLastBeat)) / 1000)
+        : null,
+    },
+    scheduler: {
+      alive: schedulerAlive,
+      lastBeat: daemonState?.schedulerLastBeat ?? null,
+      intervalSeconds: daemonState?.schedulerIntervalSeconds ?? null,
+      secondsAgo: daemonState?.schedulerLastBeat
+        ? Math.round((now - Date.parse(daemonState.schedulerLastBeat)) / 1000)
+        : null,
+    },
+    tasksTotal: tasks.length,
+    tasksInspectable: inspectable.length,
+    tasksActive: active.length,
+    tasksByStatus: {
+      running: tasks.filter(t => t.status === 'running').length,
+      queued: tasks.filter(t => t.status === 'queued').length,
+      completed: tasks.filter(t => t.status === 'completed').length,
+      stuck: tasks.filter(t => t.status === 'stuck').length,
+      failed: tasks.filter(t => t.status === 'failed').length,
+      waiting: tasks.filter(t => t.status === 'waiting_user').length,
+    },
+  }
+}
+
+function getInspectionIntervals() {
+  return {
+    watchdogSeconds: config.execution.watchdogIntervalSeconds ?? 300,
+    reporterSeconds: config.execution.progressReportIntervalSeconds ?? 900,
+  }
+}
+
+function saveInspectionIntervals(body: {
+  watchdogSeconds?: number
+  reporterSeconds?: number
+}) {
+  const raw = loadRawConfig()
+  if (!raw.execution) (raw as any).execution = {}
+  if (typeof body.watchdogSeconds === 'number') {
+    raw.execution.watchdogIntervalSeconds = Math.max(30, Math.round(body.watchdogSeconds))
+  }
+  if (typeof body.reporterSeconds === 'number') {
+    raw.execution.progressReportIntervalSeconds = Math.max(60, Math.round(body.reporterSeconds))
+  }
+  saveRawConfig(raw)
+  reloadRuntimeConfig()
+  return {
+    ok: true,
+    message: '巡检周期已保存。重启 daemon 后完全生效。',
+    watchdogSeconds: raw.execution.watchdogIntervalSeconds,
+    reporterSeconds: raw.execution.progressReportIntervalSeconds,
+  }
 }
 
 async function postChat(req: Request) {

@@ -47,6 +47,62 @@ body {
   color: var(--danger);
   border-color: rgba(251, 113, 133, 0.5);
 }
+.badge.warn {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(110, 231, 183, 0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(110, 231, 183, 0); }
+}
+.inspect-pulse {
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+.inspect-status {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: #0f141b;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.timer-running {
+  color: var(--accent);
+}
+.timer-stopped {
+  color: var(--danger);
+}
+.timer-info {
+  color: var(--muted);
+}
+
+.inspect-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.inspect-dot-on {
+  background: var(--accent);
+  animation: pulse-green-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-green-dot {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(110, 231, 183, 0.6); }
+  50% { box-shadow: 0 0 8px 3px rgba(110, 231, 183, 0.2); }
+}
+.inspect-dot-off {
+  background: var(--danger);
+}
+.inspect-dot-idle {
+  background: var(--muted);
+}
 button {
   background: #263241;
   color: var(--text);
@@ -178,6 +234,28 @@ button:hover {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
+}
+.interval-settings {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+.interval-settings label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 8px 4px 0;
+  font-size: 12px;
+}
+.interval-settings input {
+  width: 70px;
+  background: #0f141b;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-family: inherit;
 }
 .msg {
   margin-bottom: 12px;

@@ -35,6 +35,7 @@ export type EventType =
   | 'done'
   | 'exit'
   | 'watchdog_stuck'
+  | 'watchdog_observation'
   | 'task_failed'
   | 'task_completed'
   | 'task_cancelled'

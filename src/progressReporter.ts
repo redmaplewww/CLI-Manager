@@ -25,8 +25,9 @@ export class ProgressReporter {
       for (const task of tasks) {
         if (task.userArchivedAt) continue
         if (!task.inspectionEnabled) continue
+        if (task.status === 'completed') continue
         if (!force && !this.shouldReport(task)) continue
-        await this.reportTask(task, tasks)
+        await this.reportTask(task, tasks, force)
       }
     } finally {
       this.running = false
@@ -46,57 +47,110 @@ export class ProgressReporter {
       if (changedSince(task.updatedAt, task.progressUpdatedAt)) return true
       return stale(task.progressUpdatedAt, REPORT_INTERVAL_MS)
     }
-    if (task.status === 'completed' && !task.progressSummary) return true
     return false
   }
 
-  private async reportTask(task: TaskRecord, allTasks: TaskRecord[]): Promise<void> {
+  private async reportTask(
+    task: TaskRecord,
+    allTasks: TaskRecord[],
+    force: boolean,
+  ): Promise<void> {
     const now = new Date().toISOString()
     const children = allTasks.filter(child => child.parentTaskId === task.id)
-    const related = task.taskKind === 'manager' ? [task, ...children] : [task]
     const output = this.outputFor(task, children)
-    let judgement = judgeTaskCompletion(task, output)
+    const ruleJudgement = judgeTaskCompletion(task, output)
     const workContext = discoverWorkContext(task)
+
+    const needsLlm = force
+      || task.status === 'stuck'
+      || task.status === 'failed'
+      || (task.status === 'running' && ruleJudgement.negativeSignals.length > 0)
+      || (task.status === 'running' && ruleJudgement.verdict === 'needs_review')
+
+    if (!needsLlm) {
+      const summary = this.lightweightSummary(task, children, ruleJudgement)
+      this.ledger.updateTask(task.id, {
+        progressSummary: summary,
+        progressUpdatedAt: now,
+        completionVerdict: ruleJudgement.verdict,
+        completionReason: ruleJudgement.reason,
+        lastProgressNotifiedAt: now,
+      })
+      this.ledger.addEvent(
+        task.id,
+        'watchdog_observation',
+        { progressReport: true, verdict: ruleJudgement.verdict, lightweight: true },
+        summary,
+      )
+      return
+    }
+
     const llmJudgement = await this.planner.judgeTaskCompletionWithContext({
       task,
-      ruleJudgement: judgement.reason,
+      ruleJudgement: ruleJudgement.reason,
       sessionSummary: output,
       workContext: {
         filePath: workContext.filePath,
         content: workContext.content,
       },
     })
+
+    let verdict = ruleJudgement.verdict
+    let reason = ruleJudgement.reason
     if (llmJudgement) {
-      judgement = {
-        verdict: llmJudgement.verdict,
-        done: llmJudgement.verdict === 'done',
-        reason: `LLM PROJECT judgement: ${llmJudgement.reason}${llmJudgement.question ? `\nQuestion: ${llmJudgement.question}` : ''}\n\nRule judgement:\n${judgement.reason}`,
-        positiveSignals: judgement.positiveSignals,
-        negativeSignals: judgement.negativeSignals,
-      }
+      verdict = llmJudgement.verdict
+      reason = `LLM: ${llmJudgement.reason}${llmJudgement.question ? `\nQuestion: ${llmJudgement.question}` : ''}\n\n规则:\n${ruleJudgement.reason}`
     }
+
     const summary =
       (await this.planner.summarizeProgress({
-        tasks: related,
+        tasks: task.taskKind === 'manager' ? [task, ...children] : [task],
         workContext: {
           filePath: workContext.filePath,
           content: workContext.content,
         },
-      })) ?? this.fallbackSummary(task, children, judgement.reason, workContext)
+      })) ?? this.lightweightSummary(task, children, { verdict, reason })
 
     this.ledger.updateTask(task.id, {
       progressSummary: summary,
       progressUpdatedAt: now,
-      completionVerdict: judgement.verdict,
-      completionReason: judgement.reason,
+      completionVerdict: verdict,
+      completionReason: reason,
       lastProgressNotifiedAt: now,
     })
     this.ledger.addEvent(
       task.id,
       'assistant_text',
-      { progressReport: true, verdict: judgement.verdict },
+      { progressReport: true, verdict, llmBased: true },
       summary,
     )
+  }
+
+  private lightweightSummary(
+    task: TaskRecord,
+    children: TaskRecord[],
+    judgement: { verdict: string; reason: string },
+  ): string {
+    const lastOutputAge = task.lastOutputAt
+      ? `${Math.round((Date.now() - Date.parse(task.lastOutputAt)) / 1000)}s前`
+      : '无'
+
+    if (children.length > 0) {
+      const counts = new Map<string, number>()
+      for (const child of children)
+        counts.set(child.status, (counts.get(child.status) ?? 0) + 1)
+      return [
+        `[轻量巡检] ${task.id} | ${task.status} | 最近输出: ${lastOutputAge}`,
+        `子任务: ${children.length}个 (${Array.from(counts.entries()).map(([s, c]) => `${s}:${c}`).join(', ')})`,
+        judgement.reason.split('\n').slice(0, 3).join('\n'),
+      ].join('\n')
+    }
+
+    return [
+      `[轻量巡检] ${task.id} | ${task.status} | 最近输出: ${lastOutputAge}`,
+      task.errorMessage ? `错误: ${task.errorMessage}` : '无明确错误',
+      judgement.reason.split('\n').slice(0, 3).join('\n'),
+    ].join('\n')
   }
 
   private outputFor(task: TaskRecord, children: TaskRecord[]): string {
@@ -107,35 +161,6 @@ export class ProgressReporter {
         child =>
           `${child.id} ${child.status}\n${child.progressSummary ?? ''}\n${child.resultSummary ?? ''}\n${child.errorMessage ?? ''}`,
       ),
-    ].join('\n')
-  }
-
-  private fallbackSummary(
-    task: TaskRecord,
-    children: TaskRecord[],
-    reason: string,
-    workContext: { filePath: string | null; content: string },
-  ): string {
-    if (children.length > 0) {
-      const counts = new Map<string, number>()
-      for (const child of children)
-        counts.set(child.status, (counts.get(child.status) ?? 0) + 1)
-      return [
-        `父任务 ${task.id} 进度：${children.length} 个子任务；${Array.from(counts.entries())
-          .map(([status, count]) => `${status}:${count}`)
-          .join('，')}`,
-        workContext.filePath ? `项目管理文件：${workContext.filePath}` : '项目管理文件：未找到',
-        `预期比对：${reason}`,
-        '下一步：继续巡视未完成子任务，stuck/failed 会进入自动恢复。',
-      ].join('\n')
-    }
-    return [
-      `任务 ${task.id} 当前状态：${task.status}`,
-      workContext.filePath ? `项目管理文件：${workContext.filePath}` : '项目管理文件：未找到',
-      workContext.content ? `项目认知摘要：${workContext.content.slice(-600)}` : '',
-      `预期比对：${reason}`,
-      task.errorMessage ? `阻塞/错误：${task.errorMessage}` : '暂未发现明确阻塞。',
-      '下一步：继续巡视输出、完成判定和恢复条件。',
     ].join('\n')
   }
 }

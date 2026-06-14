@@ -12,6 +12,7 @@
         <strong>Aura Butler</strong>
         <span id="daemonBadge" class="badge">daemon 检查中</span>
         <span id="llmBadge" class="badge">LLM 检查中</span>
+        <span id="inspectBadge" class="badge inspect-badge">巡检 检查中</span>
       </div>
       <div class="actions">
         <button id="startDaemon">启动 daemon</button>
@@ -42,11 +43,20 @@
 
       <section class="panel monitor-panel">
         <h2>监控对话</h2>
+        <div id="inspectStatus" class="inspect-status"></div>
         <div class="monitor-actions">
           <button id="enableAllInspection">开启总巡检</button>
           <button id="disableAllInspection">关闭总巡检</button>
           <button id="refreshMonitor">刷新通报</button>
+          <button id="restartDaemonHint" title="修改周期后需重启 daemon 生效">重启 daemon</button>
         </div>
+        <details class="interval-settings">
+          <summary>巡检周期</summary>
+          <label>看门狗间隔 <input id="watchdogInterval" type="number" min="30" max="3600" step="30" /> 秒</label>
+          <label>进度报告间隔 <input id="reporterInterval" type="number" min="60" max="7200" step="60" /> 秒</label>
+          <button id="saveIntervals" type="button">保存并提示重启</button>
+          <span id="intervalHint" class="muted"></span>
+        </details>
         <div id="monitorLog" class="monitor-log"></div>
       </section>
 

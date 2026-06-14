@@ -6,7 +6,7 @@ import { TaskLedger } from './db'
 import { Supervisor } from './supervisor'
 import { Scheduler } from './scheduler'
 import { Watchdog } from './watchdog'
-import { removeDaemonState, writeDaemonState } from './daemonState'
+import { readDaemonState, removeDaemonState, writeDaemonState } from './daemonState'
 import { AutonomousProjectManager } from './autonomousProjectManager'
 import { ProgressReporter } from './progressReporter'
 
@@ -40,20 +40,50 @@ export async function runDaemonServer(
     port: address.port,
     startedAt: new Date().toISOString(),
     cwd: process.cwd(),
+    watchdogLastBeat: null,
+    watchdogIntervalSeconds: Math.max(30, config.execution.watchdogIntervalSeconds ?? 300),
+    reporterLastBeat: null,
+    reporterIntervalSeconds: Math.max(300, config.execution.progressReportIntervalSeconds ?? 900),
+    schedulerLastBeat: null,
+    schedulerIntervalSeconds: Math.max(1, config.execution.schedulerIntervalSeconds ?? 2),
   })
 
-  const schedulerTimer = setInterval(
-    () => scheduler.runQueuedOnce(),
-    Math.max(1, config.execution.schedulerIntervalSeconds ?? 2) * 1000,
-  )
-  const watchdogTimer = setInterval(
-    () => watchdog.scanOnce(),
-    Math.max(30, config.execution.watchdogIntervalSeconds ?? 300) * 1000,
-  )
-  const reporterTimer = setInterval(
-    () => void reporter.scanOnce(false),
-    Math.max(300, config.execution.progressReportIntervalSeconds ?? 900) * 1000,
-  )
+  const beatHeartbeat = () => {
+    const existing = readDaemonState(config)
+    if (existing) writeDaemonState(config, existing)
+  }
+
+  const schedulerTimer = setInterval(() => {
+    const now = new Date().toISOString()
+    const existing = readDaemonState(config)
+    if (existing) {
+      existing.schedulerLastBeat = now
+      writeDaemonState(config, existing)
+    }
+    scheduler.runQueuedOnce()
+  }, Math.max(1, config.execution.schedulerIntervalSeconds ?? 2) * 1000)
+
+  const watchdogTimer = setInterval(() => {
+    const now = new Date().toISOString()
+    const existing = readDaemonState(config)
+    if (existing) {
+      existing.watchdogLastBeat = now
+      writeDaemonState(config, existing)
+    }
+    watchdog.scanOnce()
+  }, Math.max(30, config.execution.watchdogIntervalSeconds ?? 300) * 1000)
+
+  const reporterTimer = setInterval(() => {
+    const now = new Date().toISOString()
+    const existing = readDaemonState(config)
+    if (existing) {
+      existing.reporterLastBeat = now
+      writeDaemonState(config, existing)
+    }
+    void reporter.scanOnce(false)
+  }, Math.max(300, config.execution.progressReportIntervalSeconds ?? 900) * 1000)
+
+  beatHeartbeat()
 
   const shutdown = () => {
     clearInterval(schedulerTimer)

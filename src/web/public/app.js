@@ -61,6 +61,7 @@ async function refresh() {
   renderTasks();
   renderArchivedTasks();
   renderProjects();
+  renderInspectionStatus().catch(() => {});
   renderMonitor().catch(() => {});
   if (!selectedTaskId && state.latestTaskId) selectedTaskId = state.latestTaskId;
   if (selectedTaskId) await renderInspector(selectedTaskId, { force: false });
@@ -143,6 +144,58 @@ function renderTopbar() {
   llm.className = `badge ${state.llm.enabled ? 'ok' : 'bad'}`;
 }
 
+async function renderInspectionStatus() {
+  const data = await api('/api/inspection/status');
+  const badge = $('inspectBadge');
+  const statusDiv = $('inspectStatus');
+
+  const wd = data.watchdog;
+  const rp = data.reporter;
+  const allAlive = wd.alive && rp.alive;
+  const partialAlive = wd.alive || rp.alive;
+
+  if (badge) {
+    if (!data.daemonAlive) {
+      badge.textContent = '巡检停止 (daemon未运行)';
+      badge.className = 'badge inspect-badge bad';
+    } else if (allAlive) {
+      const wdAgo = wd.secondsAgo !== null ? `${wd.secondsAgo}s` : '-';
+      const rpAgo = rp.secondsAgo !== null ? `${rp.secondsAgo}s` : '-';
+      badge.textContent = `巡检运行中`;
+      badge.className = 'badge inspect-badge ok inspect-pulse';
+    } else if (partialAlive) {
+      badge.textContent = '巡检部分运行';
+      badge.className = 'badge inspect-badge warn';
+    } else {
+      badge.textContent = '巡检已停止';
+      badge.className = 'badge inspect-badge bad';
+    }
+  }
+
+  if (statusDiv) {
+    const parts = [];
+    const fmtTimer = (name, t) => {
+      if (!data.daemonAlive) return `<span class="timer-stopped">●${name}: 停止</span>`;
+      if (t.alive) {
+        return `<span class="timer-running">●${name}: 运行中 (${t.secondsAgo ?? '?'}s前 / 间隔${t.intervalSeconds ?? '?'}s)</span>`;
+      }
+      return `<span class="timer-stopped">●${name}: 等待首次心跳</span>`;
+    };
+    parts.push(fmtTimer('调度器', data.scheduler));
+    parts.push(fmtTimer('看门狗', wd));
+    parts.push(fmtTimer('进度报告', rp));
+    const counts = data.tasksByStatus;
+    parts.push(`<span class="timer-info">任务: ${data.tasksTotal}总计 / ${data.tasksActive}活跃巡检 / 运行:${counts.running} 排队:${counts.queued} 完成:${counts.completed} 卡住:${counts.stuck} 失败:${counts.failed} 等待:${counts.waiting}</span>`);
+    statusDiv.innerHTML = parts.join('');
+  }
+}
+
+async function loadInspectionIntervals() {
+  const data = await api('/api/inspection/intervals');
+  $('watchdogInterval').value = data.watchdogSeconds;
+  $('reporterInterval').value = data.reporterSeconds;
+}
+
 function renderTasks() {
   const root = $('tasks');
   root.innerHTML = '';
@@ -193,7 +246,12 @@ function renderTaskCard(root, task, children, isChild) {
     const objective = task.displayName ? (task.title || task.prompt || '') : inferObjective(task.prompt || task.title || '');
     const fold = children.length ? `<button class="fold-button" data-task="${task.id}">${collapsedManagers.has(task.id) ? '展开' : '折叠'} ${children.length}</button>` : '';
     const inspectLabel = task.inspectionEnabled ? '巡检开' : '巡检关';
-    card.innerHTML = `<div class="title"><span class="status-${task.status}">${task.id}</span> <span class="kind">${task.taskKind ?? 'session'}</span> ${fold} <button class="inspect-toggle" data-task="${task.id}" data-enabled="${task.inspectionEnabled ? '1' : '0'}">${inspectLabel}</button></div><div class="task-label">${escapeHtml(label)}</div><div class="task-objective">${escapeHtml(objective)}</div>`;
+    const inspectDot = task.inspectionEnabled
+      ? (['completed', 'cancelled'].includes(task.status)
+        ? '<span class="inspect-dot inspect-dot-idle" title="巡检开启，任务已结束"></span>'
+        : '<span class="inspect-dot inspect-dot-on" title="巡检运行中"></span>')
+      : '<span class="inspect-dot inspect-dot-off" title="巡检关闭"></span>';
+    card.innerHTML = `<div class="title">${inspectDot}<span class="status-${task.status}">${task.id}</span> <span class="kind">${task.taskKind ?? 'session'}</span> ${fold} <button class="inspect-toggle" data-task="${task.id}" data-enabled="${task.inspectionEnabled ? '1' : '0'}">${inspectLabel}</button></div><div class="task-label">${escapeHtml(label)}</div><div class="task-objective">${escapeHtml(objective)}</div>`;
     card.onclick = () => {
       if (selectedTaskId === task.id) return;
       selectedTaskId = task.id;
@@ -465,6 +523,25 @@ $('refreshMonitor').onclick = async () => {
   await renderMonitor();
 };
 
+$('saveIntervals').onclick = async () => {
+  const res = await api('/api/inspection/intervals', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      watchdogSeconds: Number($('watchdogInterval').value),
+      reporterSeconds: Number($('reporterInterval').value),
+    }),
+  });
+  $('intervalHint').textContent = res.message || '已保存';
+};
+
+$('restartDaemonHint').onclick = async () => {
+  await api('/api/daemon/stop', { method: 'POST' }).catch(() => {});
+  await new Promise(r => setTimeout(r, 2000));
+  await api('/api/daemon/start', { method: 'POST' });
+  await refresh();
+};
+
 $('archiveTask').onclick = async () => {
   if (!selectedTaskId) return;
   await api(`/api/tasks/${selectedTaskId}/archive`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ note: '用户确认完成' }) });
@@ -513,5 +590,6 @@ $('stopDaemon').onclick = async () => { await api('/api/daemon/stop', { method: 
 
 if (!loadChatHistory()) addMessage('butler', 'Aura Butler 网页控制台已启动。你可以直接和我对话，我会在需要时分派 CLI worker。');
 loadLlmConfig().catch(() => {});
+loadInspectionIntervals().catch(() => {});
 refresh();
 setInterval(refresh, 2000);

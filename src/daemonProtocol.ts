@@ -27,4 +27,10 @@ export interface DaemonStateFile {
   port: number
   startedAt: string
   cwd: string
+  watchdogLastBeat?: string | null
+  watchdogIntervalSeconds?: number
+  reporterLastBeat?: string | null
+  reporterIntervalSeconds?: number
+  schedulerLastBeat?: string | null
+  schedulerIntervalSeconds?: number
 }
